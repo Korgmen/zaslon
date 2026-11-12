@@ -19,12 +19,14 @@ struct Config: Codable {
     var checkInterval = 5.0              // сек между проверками, когда всё в порядке
     var minAgree = 2                     // сколько IP-сервисов должны назвать один адрес
     var checkIPv6 = true
+    var compactMenuBar = false           // в меню-баре только цветная точка
 
     enum CodingKeys: String, CodingKey {
         case apps, grace
         case allowIPs = "allow_ips", allowCountries = "allow_countries"
         case closeTimeout = "close_timeout", checkInterval = "check_interval"
         case minAgree = "min_agree", checkIPv6 = "check_ipv6"
+        case compactMenuBar = "compact_menu_bar"
     }
 
     init() {}
@@ -40,6 +42,7 @@ struct Config: Codable {
         checkInterval = try c.decodeIfPresent(Double.self, forKey: .checkInterval) ?? d.checkInterval
         minAgree = try c.decodeIfPresent(Int.self, forKey: .minAgree) ?? d.minAgree
         checkIPv6 = try c.decodeIfPresent(Bool.self, forKey: .checkIPv6) ?? d.checkIPv6
+        compactMenuBar = try c.decodeIfPresent(Bool.self, forKey: .compactMenuBar) ?? d.compactMenuBar
     }
 }
 
@@ -310,6 +313,7 @@ struct CheckResult {
         frozen.formIntersection(still)
         zlog("настройки изменены: приложений \(cfg.apps.count), IP \(cfg.allowIPs.count), стран \(cfg.allowCountries.count)"
              + (released.isEmpty ? "" : "; разморожено снятых с защиты: \(released.count)"))
+        onChange()
         Task { await check() }
     }
 
@@ -751,6 +755,13 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Строка меню") {
+                Toggle(isOn: $m.cfg.compactMenuBar) {
+                    Text("Компактный режим")
+                    Text("В строке меню только цветная точка, без IP, страны и обратного отсчёта. Подробности — в меню по клику.")
+                }
+            }
+
             Section("Поведение") {
                 Stepper(value: $m.cfg.grace, in: 5...600, step: 5) {
                     Text("Пауза до закрытия: \(Int(m.cfg.grace)) с")
@@ -920,6 +931,17 @@ struct AppPicker: View {
         case .paused: ("пауза", .secondaryLabelColor)
         }
         let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        // В компактном режиме точка — картинка: её кнопка центрирует по вертикали, а символ «●» сидит выше центра.
+        if g.cfg.compactMenuBar {
+            item.button?.attributedTitle = NSAttributedString(string: "")
+            item.button?.image = NSImage(size: NSSize(width: 10, height: 10), flipped: false) { rect in
+                color.setFill()
+                NSBezierPath(ovalIn: rect.insetBy(dx: 0.5, dy: 0.5)).fill()
+                return true
+            }
+            return
+        }
+        item.button?.image = nil
         let s = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: color, .font: font])
         s.append(NSAttributedString(string: text.trimmingCharacters(in: .whitespaces), attributes: [.font: font]))
         item.button?.attributedTitle = s
