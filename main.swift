@@ -5,6 +5,7 @@
 import AppKit
 import Darwin
 import Network
+import ServiceManagement
 import SwiftUI
 
 // MARK: - Конфиг
@@ -535,6 +536,26 @@ struct CheckResult {
     }
 }
 
+// MARK: - Автозапуск
+
+/// Объект входа macOS для этого бандла. Регистрируется путь, откуда запущено приложение.
+enum LoginItem {
+    static var status: SMAppService.Status { SMAppService.mainApp.status }
+    static var enabled: Bool { status == .enabled }
+
+    /// Возвращает текст ошибки или nil.
+    static func set(_ on: Bool) -> String? {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            zlog("автозапуск \(on ? "включён" : "выключен"), статус: \(status.rawValue)")
+            return nil
+        } catch {
+            zlog("автозапуск: ошибка \(error.localizedDescription)")
+            return error.localizedDescription
+        }
+    }
+}
+
 // MARK: - Настройки: модель
 
 extension String {
@@ -578,6 +599,8 @@ func installedApps() -> [AppEntry] {
     let g: Guard
     private var loading = false
     @Published var catalog: [AppEntry] = []
+    @Published var loginStatus = LoginItem.status
+    @Published var loginError: String?
     @Published var cfg: Config {
         didSet {
             guard !loading else { return }
@@ -597,6 +620,12 @@ func installedApps() -> [AppEntry] {
         cfg = g.cfg
         loading = false
         catalog = installedApps()
+        loginStatus = LoginItem.status
+    }
+
+    func setLaunchAtLogin(_ on: Bool) {
+        loginError = LoginItem.set(on)
+        loginStatus = LoginItem.status
     }
 
     func entry(for rule: String) -> AppEntry? {
@@ -685,6 +714,24 @@ struct SettingsView: View {
                 addRow("Код страны, например NL", $newCountry,
                        valid: cc.count == 2 && cc.allSatisfy(\.isLetter) && !m.cfg.allowCountries.contains(cc)) {
                     m.cfg.allowCountries.append(cc)
+                }
+            }
+
+            Section("Запуск") {
+                Toggle(isOn: Binding(get: { m.loginStatus == .enabled || m.loginStatus == .requiresApproval },
+                                     set: { m.setLaunchAtLogin($0) })) {
+                    Text("Запускать при входе в систему")
+                    Text("Zaslon стартует сам после включения или перезагрузки Mac, и защита работает без ручного запуска.")
+                }
+                if m.loginStatus == .requiresApproval {
+                    HStack {
+                        Text("macOS ждёт разрешения в «Объектах входа»").foregroundStyle(.orange)
+                        Spacer()
+                        Button("Открыть настройки") { SMAppService.openSystemSettingsLoginItems() }
+                    }
+                }
+                if let e = m.loginError {
+                    Text("Не удалось изменить автозапуск: \(e)").foregroundStyle(.red)
                 }
             }
 
@@ -905,6 +952,8 @@ struct AppPicker: View {
         } else {
             action("Приостановить защиту", #selector(togglePause))
         }
+        action("Запускать при входе в систему", #selector(toggleLaunchAtLogin))
+        menu.items.last?.state = LoginItem.status == .notRegistered || LoginItem.status == .notFound ? .off : .on
         action("Настройки…", #selector(openSettings), key: ",")
         action("Открыть лог", #selector(openLog), key: "l")
         menu.addItem(.separator())
@@ -927,6 +976,11 @@ struct AppPicker: View {
         g.saveConfig()
         settings.reload()
         checkNow()
+    }
+
+    @objc func toggleLaunchAtLogin() {
+        settings.setLaunchAtLogin(!LoginItem.enabled && LoginItem.status != .requiresApproval)
+        if LoginItem.status == .requiresApproval { SMAppService.openSystemSettingsLoginItems() }
     }
 
     @objc func togglePause() {
