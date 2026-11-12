@@ -1,0 +1,37 @@
+# Тег vX.Y (совпадает с CFBundleShortVersionString) -> сборка DMG и релиз на GitHub.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check tag matches Info.plist version
+        run: |
+          VER=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
+          if [ "$GITHUB_REF_NAME" != "v$VER" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match Info.plist version $VER"
+            exit 1
+          fi
+          echo "VER=$VER" >> "$GITHUB_ENV"
+
+      - name: Build DMG
+        run: ./dmg.sh
+
+      - name: Release notes from CHANGELOG
+        run: |
+          awk -v v="$VER" '$0 ~ "^## " v " " {f=1; next} /^## /{f=0} f' CHANGELOG.md > notes.md
+          test -s notes.md
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "build/Zaslon-$VER.dmg" --title "Zaslon $VER" --notes-file notes.md
