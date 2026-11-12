@@ -193,6 +193,7 @@ struct CheckResult {
     private var lastTick = Date()
     private var pathSig: String?
     private var lastBadKey = ""          // чтобы не писать в лог одну и ту же неудачную проверку
+    private var noAnswerStreak = 0       // проверок подряд, на которые не ответил ни один IPv4-сервис
 
     init(save: Bool) {
         if FileManager.default.fileExists(atPath: configURL.path) {
@@ -405,6 +406,21 @@ struct CheckResult {
             Task { await check() }
             return
         }
+
+        // Молчание всех сервисов — не утечка: трафик в этот момент никуда не идёт, а пропажу
+        // сети или туннеля ловит pathChanged. Пауза, только если сервисы молчат две проверки подряд.
+        let noAnswer = r.v4 == nil && r.v4Others.isEmpty
+        noAnswerStreak = noAnswer ? noAnswerStreak + 1 : 0
+        var running = false
+        if case .ok = state { running = true }
+        if case .starting = state { running = true }
+        if noAnswer, noAnswerStreak < 2, running {
+            zlog("нет ответа ни от одного IP-сервиса, повторная проверка без паузы")
+            recheck = false
+            Task { await check() }
+            return
+        }
+
         last = r
         if let p = r.v4Partial {
             zlog("медленная сеть: \(p); единственный адрес \(r.v4 ?? "—") принят, итог: \(r.good ? "разрешён" : r.reason)")
@@ -750,7 +766,7 @@ struct SettingsView: View {
                 }
                 Stepper(value: $m.cfg.minAgree, in: 1...v4URLs.count) {
                     Text("Согласие сервисов: \(m.cfg.minAgree) из \(v4URLs.count)")
-                    Text("IP узнаётся у \(v4URLs.count) независимых сервисов. Адрес считается настоящим, когда столько из них назвали один и тот же. Если из-за медленной сети ответили не все, но все назвали один адрес, он тоже принимается. Пауза — когда сервисы называют разные адреса или не отвечает ни один.")
+                    Text("IP узнаётся у \(v4URLs.count) независимых сервисов. Адрес считается настоящим, когда столько из них назвали один и тот же. Если из-за медленной сети ответили не все, но все назвали один адрес, он тоже принимается. Пауза — когда сервисы называют разные адреса или не отвечает ни один две проверки подряд.")
                 }
                 Toggle(isOn: $m.cfg.checkIPv6) {
                     Text("Следить за IPv6")
