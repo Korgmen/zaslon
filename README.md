@@ -29,6 +29,14 @@ open build/Zaslon.app
 
 Сборка подписана ad-hoc, без Developer ID. На своём Mac она запускается как обычно. На другом Mac скачанный образ заблокирует Gatekeeper. Тогда открой приложение правым кликом → «Открыть» или выполни `xattr -dr com.apple.quarantine /Applications/Zaslon.app`.
 
+## Иконка
+
+`AppIcon.icns` лежит в репозитории, `build.sh` копирует её в бандл. Иконку рисует `icon.swift` из векторов, каждый размер отдельно. Пересобрать после правки:
+
+```sh
+xcrun --sdk macosx swiftc -sdk "$(xcrun --show-sdk-path)" icon.swift -o build/make-icon && build/make-icon AppIcon.icns
+```
+
 ## Как устроено
 
 - IPv4 спрашивается у 5 сервисов параллельно, адрес принимается, когда `min_agree` из них ответили одинаково. IPv6 спрашивается у 3 сервисов, достаточно одного ответа.

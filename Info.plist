@@ -8,6 +8,8 @@
 	<array>
 		<string>ru</string>
 	</array>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleExecutable</key>
 	<string>Zaslon</string>
 	<key>CFBundleIdentifier</key>
