@@ -1,5 +1,5 @@
 #!/bin/sh
-# Собирает build/Zaslon.app. Нужен Xcode (или Command Line Tools).
+# Собирает build/Zaslon.app, универсальный бинарник (Apple Silicon и Intel). Нужен Xcode.
 set -eu
 cd "$(dirname "$0")"
 
@@ -9,8 +9,12 @@ APP=build/Zaslon.app
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-"$SWIFTC" -O -sdk "$SDK" -swift-version 5 -target "$(uname -m)-apple-macos13" \
-  main.swift -o "$APP/Contents/MacOS/Zaslon"
+for ARCH in arm64 x86_64; do
+  "$SWIFTC" -O -sdk "$SDK" -swift-version 5 -target "$ARCH-apple-macos13" \
+    main.swift -o "build/Zaslon-$ARCH"
+done
+lipo -create build/Zaslon-arm64 build/Zaslon-x86_64 -output "$APP/Contents/MacOS/Zaslon"
+rm build/Zaslon-arm64 build/Zaslon-x86_64
 cp Info.plist "$APP/Contents/"
 cp AppIcon.icns "$APP/Contents/Resources/"
 codesign --force --sign - "$APP"
