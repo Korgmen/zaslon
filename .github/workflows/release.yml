@@ -1,4 +1,4 @@
-# Тег vX.Y (совпадает с CFBundleShortVersionString) -> сборка DMG и релиз на GitHub.
+# Тег vX.Y (совпадает с CFBundleShortVersionString) -> DMG для macOS, exe для Windows и релиз на GitHub.
 name: Release
 
 on:
@@ -9,22 +9,66 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  macos:
     runs-on: macos-15
+    outputs:
+      ver: ${{ steps.ver.outputs.ver }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Check tag matches Info.plist version
+        id: ver
         run: |
           VER=$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' Info.plist)
           if [ "$GITHUB_REF_NAME" != "v$VER" ]; then
             echo "Tag $GITHUB_REF_NAME does not match Info.plist version $VER"
             exit 1
           fi
-          echo "VER=$VER" >> "$GITHUB_ENV"
+          echo "ver=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Build DMG
         run: ./dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: build/Zaslon-${{ steps.ver.outputs.ver }}.dmg
+
+  # Манифест с правами администратора и иконку в exe вшивает только сборка на Windows.
+  windows:
+    needs: macos
+    runs-on: windows-latest
+    env:
+      VER: ${{ needs.macos.outputs.ver }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build exe
+        run: |
+          dotnet publish windows/Zaslon.csproj -c Release -p:Version=$env:VER -o out
+          Move-Item out/Zaslon.exe "Zaslon-$env:VER-win-x64.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: Zaslon-${{ env.VER }}-win-x64.exe
+
+  release:
+    needs: [macos, windows]
+    runs-on: ubuntu-latest
+    env:
+      VER: ${{ needs.macos.outputs.ver }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
 
       - name: Release notes from CHANGELOG
         run: |
@@ -34,4 +78,4 @@ jobs:
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "build/Zaslon-$VER.dmg" --title "Zaslon $VER" --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Zaslon $VER" --notes-file notes.md
